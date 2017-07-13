@@ -1,5 +1,6 @@
-# md_image2base64
-convert images to base64 in markdown  
+# md_image2base64  
+把markdown中引用的图片用base64的形式硬编码到markdown里
+
 
 ## 简单介绍
 markdown是个比较简洁的写东西的方式，但是图片放在别的地方让我实在放心不下  
