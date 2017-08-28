@@ -1,4 +1,4 @@
-# md_image2base64  
+# md_img2base64  
 把markdown中引用的图片用base64的形式硬编码到markdown里
 
 
@@ -13,4 +13,4 @@ markdown是个比较简洁的写东西的方式，但是图片放在别的地方
 
 
 ## 使用命令  
-`python image2base64.py a.md`
+`python img2base64.py a.md`
