@@ -1,20 +1,22 @@
 # coding:utf8
 # author: qux
-'''
+"""
 markdown图片转换相关
 
 图片可能有3种: 在线图片/本地图片/base64编码
 
 脚本有2个功能
-1. 将图片直接用base64的形式编码在文件中  
-2. 将图片保存到pic文件夹中  
+1. 将图片直接用base64的形式编码在文件中
+2. 将图片保存到pic文件夹中
 
-'''
+"""
 
 import os
+import sys
 import re
 import base64
 import requests
+from hashlib import md5
 from optparse import OptionParser
 
 
@@ -80,7 +82,6 @@ def pic_out(src_path, dst_path):
     if matches and not os.path.exists(pic_folder_path):
         os.mkdir(pic_folder_path)
 
-    pic_number = 1
     for match in matches:
         if match.startswith(('data:image', 'http')):
             if match.startswith('data:image'):
@@ -88,12 +89,12 @@ def pic_out(src_path, dst_path):
                 pic_content = base64_pic.decode('base64')
             if match.startswith('http'):
                 pic_content = requests.get(match).content
-            pic_path = os.path.join(pic_folder_path, '%d.png' % pic_number)
+            pic_md5 = md5(pic_content).hexdigest()
+            pic_path = os.path.join(pic_folder_path, '%s.png' % pic_md5)
             with open(pic_path, 'wb') as f:
                 f.write(pic_content)
-            md_content = md_content.replace(match, './pics/%d.png' % pic_number)
+            md_content = md_content.replace(match, './pics/%s.png' % pic_md5)
             print(pic_path + ' Converted.')
-            pic_number += 1
 
     dst_file = open(dst_path, 'w')
     dst_file.write(md_content)
@@ -115,6 +116,10 @@ def main():
     src_path = options.src_path
     dst_path = options.dst_path
     method = options.method
+
+    if len(sys.argv) == 1:
+        parser.print_usage()
+        exit(0)
 
     if not src_path or not os.path.exists(src_path):
         print('Cannot get src file!!!')
