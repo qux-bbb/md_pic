@@ -6,137 +6,294 @@ markdown图片转换相关
 图片可能有3种: 在线图片/本地图片/base64编码
 
 脚本有2个功能
-1. 将图片直接用base64的形式编码在文件中
-2. 将图片保存到pic文件夹中
+1. 将图片直接用base64的形式编码在文件中(参考式)
+2. 将图片保存到pics文件夹中
 
 """
-
+import argparse
 import os
-import sys
 import re
 import base64
+import textwrap
+
 import requests
 from hashlib import md5
-from optparse import OptionParser
 
 
-def pic_in(src_path, dst_path):
-    """
-	将md中涉及到的图片转为内嵌base64的形式
-	:param src_path: 原md文件路径
-	:param dst_path: 转换后的md文件路径
-	:return: None
-	"""
-    md_folder = os.path.dirname(src_path)
+class MdPic:
+    refer_resource_re = re.compile(r'\[(?P<refer_id>.+?)\]:\s+(?P<refer_content_with_title>.+)\n*')
+    inline_re = re.compile(r'!\[(?P<alt_text>.+)]\((?P<content_with_title>.*)\)')
+    refer_re = re.compile(r'!\[(?P<alt_text>.+)]\[(?P<refer_id>.*)\]')
+    base64_img_re = re.compile(r'data:image/.+?;base64,(.+)')
 
-    src_file = open(src_path, 'r')
-    md_content = src_file.read()
-    src_file.close()
+    def __init__(self, src_path, dst_path, pic_folder_name='pics'):
+        self.pic_folder_name = pic_folder_name  # 转换后的图片文件夹
+        self.md_folder = os.path.dirname(src_path)  # 原md文件所在文件夹
+        self.dst_path = dst_path  # 转换后的md文件路径
+        self.md_content = None  # 原md文件内容
+        self.existing_references = {}  # 所有已存在的引用
+        self.inline_matches = None  # 行内式图片集
+        self.refer_matches = None  # 引用式图片集
 
-    # 正则 找到图片路径
-    matches = re.findall(r'!\[.*]\((.*)\)', md_content)
+        src_file = open(src_path, 'r')
+        self.md_content = src_file.read()
+        src_file.close()
 
-    for match in matches:
-        if match.startswith('data:image'):
-            continue
-        if match.startswith('http'):
-            print(match + ' Converting...')
-            pic_content = requests.get(match).content
+        for match in re.finditer(MdPic.refer_resource_re, self.md_content):
+            refer_id = match.group('refer_id')
+            if refer_id in self.existing_references:
+                continue
+            match_content, match_title = MdPic.split_content_title(match.group('refer_content_with_title'))
+            self.existing_references[refer_id] = {
+                'raw': match.group(),
+                'content': match_content,
+                'title': match_title,
+                'changed': False,
+                'used': False
+            }
+
+        # ![Alt text](/path/to/img.jpg "Optional title")
+        self.inline_matches = re.finditer(MdPic.inline_re, self.md_content)
+        # ![Alt text][id]
+        self.refer_matches = re.finditer(MdPic.refer_re, self.md_content)
+
+    @staticmethod
+    def split_content_title(content_title):
+        """
+        拆分content和title
+        :param content_title: 可能包含title的内容
+        :return: str,str or str,None
+        """
+        if re.search(r'\s', content_title):
+            return content_title.split(None, 1)
         else:
-            pic_path = os.path.join(md_folder, match)
-            print(pic_path + ' Converting...')
+            return content_title, None
+
+    def get_base64_pic_and_pic_content(self, match_content):
+        if match_content.startswith('http'):
+            pic_content = requests.get(match_content).content
+        else:
+            pic_path = os.path.join(self.md_folder, match_content)
             pic_content = open(pic_path, 'rb').read()
-
-        pic_encode = base64.b64encode(pic_content)
-
-        base64_pic = ''
+        pic_encoded = base64.b64encode(pic_content)
         # 图片类型经过试验没必要区分，所以直接硬编码
         # 可行的类型有: jpeg/png/gif
         # 精准识别需要引入magic库，不方便
-        base64_pic += 'data:image/png;base64,'
-        base64_pic += pic_encode
-        md_content = md_content.replace(match, base64_pic)
+        base64_pic = 'data:image/png;base64,' + pic_encoded
+        return base64_pic, pic_content
 
-    dst_file = open(dst_path, 'w')
-    dst_file.write(md_content)
-    dst_file.close()
+    def pic_in(self):
+        """
+        将md中涉及到的图片转为内嵌base64的形式, base64放在文件末尾
+        :return: None
+        """
 
+        reference_ids = self.existing_references.keys()
 
-def pic_out(src_path, dst_path):
-    """
-	将md中涉及到的图片转为本地图片的形式
-	:param src_path: 原md文件路径
-	:param dst_path: 转换后的md文件路径
-	:return: None
-	"""
-    md_folder = os.path.dirname(src_path)
+        new_references = {}
 
-    src_file = open(src_path, 'r')
-    md_content = src_file.read()
-    src_file.close()
-
-    # 正则 找到图片路径
-    matches = re.findall(r'!\[.*]\((.*)\)', md_content)
-
-    pic_folder_path = os.path.join(md_folder, 'pics')
-    if matches and not os.path.exists(pic_folder_path):
-        os.mkdir(pic_folder_path)
-
-    for match in matches:
-        if match.startswith(('data:image', 'http')):
-            if match.startswith('data:image'):
-                base64_pic = re.findall(r'data:image/.+?;base64,(.+)', match)[0].strip()
-                pic_content = base64_pic.decode('base64')
-            if match.startswith('http'):
-                pic_content = requests.get(match).content
+        for match in self.inline_matches:
+            alt_text = match.group('alt_text')
+            match_content, match_title = MdPic.split_content_title(match.group('content_with_title'))
+            if match_content.startswith('data:image'):
+                base64_pic = match_content
+                pic_encoded = re.search(MdPic.base64_img_re, match_content).group(1).strip()
+                pic_content = pic_encoded.decode('base64')
+            else:
+                base64_pic, pic_content = self.get_base64_pic_and_pic_content(match_content)
             pic_md5 = md5(pic_content).hexdigest()
-            pic_path = os.path.join(pic_folder_path, '%s.png' % pic_md5)
-            with open(pic_path, 'wb') as f:
-                f.write(pic_content)
-            md_content = md_content.replace(match, './pics/%s.png' % pic_md5)
-            print(pic_path + ' Converted.')
 
-    dst_file = open(dst_path, 'w')
-    dst_file.write(md_content)
-    dst_file.close()
+            self.md_content = self.md_content.replace(match.group(),
+                                                      '![{alt_text}][{pic_md5}]'.format(alt_text=alt_text,
+                                                                                        pic_md5=pic_md5)
+                                                      )
+
+            if pic_md5 in reference_ids:
+                if not new_references[pic_md5]['title'] and match_title:
+                    new_references[pic_md5]['title'] = match_title
+            else:
+                reference_ids.append(pic_md5)
+                new_references[pic_md5] = {
+                    'content': base64_pic,
+                    'title': match_title
+                }
+
+        for match in self.refer_matches:
+            alt_text = match.group('alt_text')
+            if match.group('refer_id'):
+                refer_id = match.group('refer_id')
+            else:
+                refer_id = alt_text
+            if self.existing_references[refer_id]['content'].startswith('data:image'):
+                pass
+            else:
+                self.existing_references[refer_id]['content'], _ = self.get_base64_pic_and_pic_content(self.existing_references[refer_id]['content'])
+                self.existing_references[refer_id]['changed'] = True
+        for k in self.existing_references:
+            if self.existing_references[k]['changed']:
+                if self.existing_references[k]['title']:
+                    self.md_content = self.md_content.replace(self.existing_references[k]['raw'],
+                                                              '[{refer_id}]: {refer_content} {refer_title}\n'.format(
+                                                                  refer_id=k,
+                                                                  refer_content=self.existing_references[k]['content'],
+                                                                  refer_title=self.existing_references[k]['title']
+                                                              ))
+                else:
+                    self.md_content = self.md_content.replace(self.existing_references[k]['raw'],
+                                                              '[{refer_id}]: {refer_content}\n'.format(
+                                                                  refer_id=k,
+                                                                  refer_content=self.existing_references[k]['content'])
+                                                              )
+                print(k + ' Converted.')
+
+        if self.existing_references:
+            if not self.md_content.endswith('\n'):
+                self.md_content += '\n'
+        else:
+            # 保证引用出现前至少有2个回车符
+            if self.md_content.endswith('\n\n'):
+                pass
+            elif self.md_content.endswith('\n'):
+                self.md_content += '\n'
+            else:
+                self.md_content += '\n\n'
+
+        for refer_id in new_references:
+            if new_references[refer_id]['title']:
+                self.md_content += '[{refer_id}]: {refer_content} {refer_title}\n'.format(
+                    refer_id=refer_id,
+                    refer_content=new_references[refer_id]['content'],
+                    refer_title=new_references[refer_id]['title']
+                )
+            else:
+                self.md_content += '[{refer_id}]: {refer_content}\n'.format(
+                    refer_id=refer_id,
+                    refer_content=new_references[refer_id]['content']
+                )
+            print(refer_id + ' Converted.')
+
+        dst_file = open(self.dst_path, 'w')
+        dst_file.write(self.md_content)
+        dst_file.close()
+
+    def pic_out(self):
+        """
+        将md中涉及到的图片转为本地图片的形式, 放在图片文件夹中
+        :return: None
+        """
+
+        pic_folder_path = os.path.join(self.md_folder, self.pic_folder_name)
+        if not os.path.exists(pic_folder_path):
+            os.mkdir(pic_folder_path)
+        if re.search(r'!\[.*]\(.*\)', self.md_content) and not os.path.exists(pic_folder_path):
+            os.mkdir(pic_folder_path)
+
+        for match in self.inline_matches:
+            alt_text = match.group('alt_text')
+            match_content, match_title = MdPic.split_content_title(match.group('content_with_title'))
+            if match_content.startswith(('data:image', 'http')):
+                if match_content.startswith('data:image'):
+                    base64_pic = re.findall(MdPic.base64_img_re, match_content)[0].strip()
+                    pic_content = base64_pic.decode('base64')
+                else:
+                    pic_content = requests.get(match_content).content
+                pic_md5 = md5(pic_content).hexdigest()
+                pic_path = os.path.join(pic_folder_path, '%s.png' % pic_md5)
+                with open(pic_path, 'wb') as f:
+                    f.write(pic_content)
+                if match_title:
+                    self.md_content = self.md_content.replace(match.group(),
+                                                              '![{alt_text}](./{pic_folder_name}/{pic_md5}.png {title})'.format(
+                                                                  alt_text=alt_text,
+                                                                  pic_folder_name=self.pic_folder_name,
+                                                                  pic_md5=pic_md5,
+                                                                  title=match_title)
+                                                              )
+                else:
+                    self.md_content = self.md_content.replace(match.group(),
+                                                              '![{alt_text}](./{pic_folder_name}/{pic_md5}.png)'.format(
+                                                                  alt_text=alt_text,
+                                                                  pic_folder_name=self.pic_folder_name,
+                                                                  pic_md5=pic_md5)
+                                                              )
+                print(pic_path + ' Converted.')
+
+        for match in self.refer_matches:
+            alt_text = match.group('alt_text')
+            if match.group('refer_id'):
+                refer_id = match.group('refer_id')
+            else:
+                refer_id = alt_text
+            if self.existing_references[refer_id]['content'].startswith(('data:image', 'http')):
+                if self.existing_references[refer_id]['content'].startswith('data:image'):
+                    base64_pic = re.findall(MdPic.base64_img_re,
+                                            self.existing_references[refer_id]['content'])[0].strip()
+                    pic_content = base64_pic.decode('base64')
+                else:
+                    pic_content = requests.get(self.existing_references[refer_id]['content']).content
+                pic_md5 = md5(pic_content).hexdigest()
+
+                if self.existing_references[refer_id]['title']:
+                    self.md_content = self.md_content.replace(match.group(),
+                                                              '![{alt_text}](./{pic_folder_name}/{pic_md5}.png {title})'.format(
+                                                                  alt_text=alt_text,
+                                                                  pic_folder_name=self.pic_folder_name,
+                                                                  pic_md5=pic_md5,
+                                                                  title=self.existing_references[refer_id]['title'])
+                                                              )
+                else:
+                    self.md_content = self.md_content.replace(match.group(),
+                                                              '![{alt_text}](./{pic_folder_name}/{pic_md5}.png)'.format(
+                                                                  alt_text=alt_text,
+                                                                  pic_folder_name=self.pic_folder_name,
+                                                                  pic_md5=pic_md5)
+                                                              )
+                pic_path = os.path.join(pic_folder_path, '%s.png' % pic_md5)
+                if not os.path.exists(pic_path):
+                    with open(pic_path, 'wb') as f:
+                        f.write(pic_content)
+                    print(pic_path + ' Converted.')
+
+                self.existing_references[refer_id]['used'] = True
+
+        # 移除已经使用的reference
+        for k in self.existing_references:
+            if self.existing_references[k]['used']:
+                self.md_content = self.md_content.replace(self.existing_references[k]['raw'], '')
+
+        dst_file = open(self.dst_path, 'w')
+        dst_file.write(self.md_content)
+        dst_file.close()
 
 
 def main():
-    parser = OptionParser(
-        'Usage:    python md_pic.py [options]\n'
-        'Example:\n'
-        '  Turn pics into md file: python md_pic.py -f src.md -t pic_in -d dst.md\n'
-        '  Turn pics to pic folder: python md_pic.py -f src.md -t pic_out -d dst.md\n')
-    parser.add_option('-f', '--file', dest='src_path', help='the source file to turn')
-    parser.add_option('-d', '--dest_file', dest='dst_path', help='the destination file processed')
-    parser.add_option('-t', '--type', dest='method', help='the method to use, could be one of them: pic_in | pic_out')
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=textwrap.dedent('''
+        Convert markdown pictures.
+        Example:
+            Turn pictures into md file: python md_pic.py -s src.md -t pic_in -d dst.md
+            Turn pictures to folder: python md_pic.py -s src.md -t pic_out -d dst.md'''))
+    parser.add_argument('-t', '--type', type=str, choices=['pic_in', 'pic_out'], help='the method to use', required=True)
+    parser.add_argument('-s', '--src_path', type=str, help='the path of the source file to be converted', required=True)
+    parser.add_argument('-d', '--dst_path', type=str, help='the path of the converted file')
+    args = parser.parse_args()
 
-    (options, args) = parser.parse_args()
-
-    src_path = options.src_path
-    dst_path = options.dst_path
-    method = options.method
-
-    if len(sys.argv) == 1:
-        parser.print_usage()
+    if not os.path.exists(args.src_path):
+        print('The source file does not exist!!!')
         exit(0)
-
-    if not src_path or not os.path.exists(src_path):
-        print('Cannot get src file!!!')
-        exit(0)
-    if not method or method not in ['pic_in', 'pic_out']:
-        print('Need type or type is error!!!')
-        exit(0)
-    if not dst_path:
-        dst_path = src_path + '.modify'
-
-    if method == 'pic_in':
-        pic_in(src_path, dst_path)
+    if not args.dst_path:
+        dst_path = args.src_path + '.modify'
     else:
-        pic_out(src_path, dst_path)
+        dst_path = args.dst_path
+
+    md_pic = MdPic(args.src_path, dst_path)
+    if args.type == 'pic_in':
+        md_pic.pic_in()
+    else:
+        md_pic.pic_out()
 
     print('Done!')
-
     return
 
 
