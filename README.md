@@ -24,23 +24,19 @@ markdown图片分为2种形式: 行内式, 参考式
 
 ## 使用命令  
 ```bat
-Usage: md_pic.py [-h] -t {pic_in,pic_out} -s SRC_PATH [-d DST_PATH]
+usage: md_pic.py [-h] {pic_in,pic_out} path
 
 Convert markdown pictures.
 Example:
-    Turn pictures into md file: python md_pic.py -s src.md -t pic_in -d dst.md
-    Turn pictures to folder: python md_pic.py -s src.md -t pic_out -d dst.md
+    Turn pictures into md file: python md_pic.py pic_in hello.md
+    Turn pictures to folder: python md_pic.py pic_out hello.md
+
+positional arguments:
+  {pic_in,pic_out}  the method to use
+  path              the path of the file to be converted
 
 optional arguments:
-  -h, --help            show this help message and exit
-  -t {pic_in,pic_out}, --type {pic_in,pic_out}
-                        the method to use
-  -s SRC_PATH, --src_path SRC_PATH
-                        the path of the source file to be converted
-  -d DST_PATH, --dst_path DST_PATH
-                        the path of the converted file
-
-
+  -h, --help        show this help message and exit
 ```
 
 ## 参考链接

@@ -11,13 +11,14 @@ markdown图片转换相关
 
 """
 import argparse
+import base64
 import os
 import re
-import base64
+import shutil
 import textwrap
+from hashlib import md5
 
 import requests
-from hashlib import md5
 
 
 class MdPic:
@@ -26,16 +27,16 @@ class MdPic:
     refer_re = re.compile(r'!\[(?P<alt_text>.+)]\[(?P<refer_id>.*)\]')
     base64_img_re = re.compile(r'data:image/.+?;base64,(.+)')
 
-    def __init__(self, src_path, dst_path, pic_folder_name='pics'):
+    def __init__(self, file_path, pic_folder_name='pics'):
         self.pic_folder_name = pic_folder_name  # 转换后的图片文件夹
-        self.md_folder = os.path.dirname(src_path)  # 原md文件所在文件夹
-        self.dst_path = dst_path  # 转换后的md文件路径
+        self.md_folder = os.path.dirname(file_path)  # 原md文件所在文件夹
+        self.file_path = file_path  # md文件路径
         self.md_content = None  # 原md文件内容
         self.existing_references = {}  # 所有已存在的引用
         self.inline_matches = None  # 行内式图片集
         self.refer_matches = None  # 引用式图片集
 
-        src_file = open(src_path, 'r')
+        src_file = open(file_path, 'r')
         self.md_content = src_file.read()
         src_file.close()
 
@@ -172,7 +173,7 @@ class MdPic:
                 )
             print(refer_id + ' Converted.')
 
-        dst_file = open(self.dst_path, 'w')
+        dst_file = open(self.file_path, 'w')
         dst_file.write(self.md_content)
         dst_file.close()
 
@@ -261,7 +262,7 @@ class MdPic:
             if self.existing_references[k]['used']:
                 self.md_content = self.md_content.replace(self.existing_references[k]['raw'], '')
 
-        dst_file = open(self.dst_path, 'w')
+        dst_file = open(self.file_path, 'w')
         dst_file.write(self.md_content)
         dst_file.close()
 
@@ -272,22 +273,19 @@ def main():
         description=textwrap.dedent('''
         Convert markdown pictures.
         Example:
-            Turn pictures into md file: python md_pic.py -s src.md -t pic_in -d dst.md
-            Turn pictures to folder: python md_pic.py -s src.md -t pic_out -d dst.md'''))
-    parser.add_argument('-t', '--type', type=str, choices=['pic_in', 'pic_out'], help='the method to use', required=True)
-    parser.add_argument('-s', '--src_path', type=str, help='the path of the source file to be converted', required=True)
-    parser.add_argument('-d', '--dst_path', type=str, help='the path of the converted file')
+            Turn pictures into md file: python md_pic.py pic_in hello.md
+            Turn pictures to folder: python md_pic.py pic_out hello.md'''))
+    parser.add_argument('type', choices=['pic_in', 'pic_out'], help='the method to use')
+    parser.add_argument('path', help='the path of the file to be converted')
     args = parser.parse_args()
 
-    if not os.path.exists(args.src_path):
-        print('The source file does not exist!!!')
+    if not os.path.exists(args.path):
+        print('The file does not exist!!!')
         exit(0)
-    if not args.dst_path:
-        dst_path = args.src_path + '.modify'
-    else:
-        dst_path = args.dst_path
+    
+    shutil.copyfile(args.path, args.path+'.bak')
 
-    md_pic = MdPic(args.src_path, dst_path)
+    md_pic = MdPic(args.path)
     if args.type == 'pic_in':
         md_pic.pic_in()
     else:
