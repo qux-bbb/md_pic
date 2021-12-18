@@ -32,7 +32,7 @@ class MdPic:
         self.md_folder = os.path.dirname(file_path)  # 原md文件所在文件夹
         self.file_path = file_path  # md文件路径
         self.md_content = None  # 原md文件内容
-        self.existing_references = {}  # 所有已存在的引用
+        self.existing_refs = {}  # 所有已存在的引用
         self.inline_matches = None  # 行内式图片集
         self.refer_matches = None  # 引用式图片集
 
@@ -42,10 +42,10 @@ class MdPic:
 
         for match in re.finditer(MdPic.refer_resource_re, self.md_content):
             refer_id = match.group('refer_id')
-            if refer_id in self.existing_references:
+            if refer_id in self.existing_refs:
                 continue
             match_content, match_title = MdPic.split_content_title(match.group('refer_content_with_title'))
-            self.existing_references[refer_id] = {
+            self.existing_refs[refer_id] = {
                 'raw': match.group(),
                 'content': match_content,
                 'title': match_title,
@@ -70,7 +70,7 @@ class MdPic:
         else:
             return content_title, None
 
-    def get_base64_pic_and_pic_content(self, match_content):
+    def get_pic_base64_and_content(self, match_content):
         if match_content.startswith('http'):
             pic_content = requests.get(match_content).content
         else:
@@ -89,9 +89,9 @@ class MdPic:
         :return: None
         """
 
-        reference_ids = self.existing_references.keys()
+        ref_ids = self.existing_refs.keys()
 
-        new_references = {}
+        new_refs = {}
 
         for match in self.inline_matches:
             alt_text = match.group('alt_text')
@@ -101,7 +101,7 @@ class MdPic:
                 pic_encoded = re.search(MdPic.base64_img_re, match_content).group(1).strip()
                 pic_content = pic_encoded.decode('base64')
             else:
-                base64_pic, pic_content = self.get_base64_pic_and_pic_content(match_content)
+                base64_pic, pic_content = self.get_pic_base64_and_content(match_content)
             pic_md5 = md5(pic_content).hexdigest()
 
             self.md_content = self.md_content.replace(match.group(),
@@ -109,12 +109,12 @@ class MdPic:
                                                                                         pic_md5=pic_md5)
                                                       )
 
-            if pic_md5 in reference_ids:
-                if not new_references[pic_md5]['title'] and match_title:
-                    new_references[pic_md5]['title'] = match_title
+            if pic_md5 in ref_ids:
+                if not new_refs[pic_md5]['title'] and match_title:
+                    new_refs[pic_md5]['title'] = match_title
             else:
-                reference_ids.append(pic_md5)
-                new_references[pic_md5] = {
+                ref_ids.append(pic_md5)
+                new_refs[pic_md5] = {
                     'content': base64_pic,
                     'title': match_title
                 }
@@ -125,29 +125,29 @@ class MdPic:
                 refer_id = match.group('refer_id')
             else:
                 refer_id = alt_text
-            if self.existing_references[refer_id]['content'].startswith('data:image'):
+            if self.existing_refs[refer_id]['content'].startswith('data:image'):
                 pass
             else:
-                self.existing_references[refer_id]['content'], _ = self.get_base64_pic_and_pic_content(self.existing_references[refer_id]['content'])
-                self.existing_references[refer_id]['changed'] = True
-        for k in self.existing_references:
-            if self.existing_references[k]['changed']:
-                if self.existing_references[k]['title']:
-                    self.md_content = self.md_content.replace(self.existing_references[k]['raw'],
+                self.existing_refs[refer_id]['content'], _ = self.get_pic_base64_and_content(self.existing_refs[refer_id]['content'])
+                self.existing_refs[refer_id]['changed'] = True
+        for k in self.existing_refs:
+            if self.existing_refs[k]['changed']:
+                if self.existing_refs[k]['title']:
+                    self.md_content = self.md_content.replace(self.existing_refs[k]['raw'],
                                                               '[{refer_id}]: {refer_content} {refer_title}\n'.format(
                                                                   refer_id=k,
-                                                                  refer_content=self.existing_references[k]['content'],
-                                                                  refer_title=self.existing_references[k]['title']
+                                                                  refer_content=self.existing_refs[k]['content'],
+                                                                  refer_title=self.existing_refs[k]['title']
                                                               ))
                 else:
-                    self.md_content = self.md_content.replace(self.existing_references[k]['raw'],
+                    self.md_content = self.md_content.replace(self.existing_refs[k]['raw'],
                                                               '[{refer_id}]: {refer_content}\n'.format(
                                                                   refer_id=k,
-                                                                  refer_content=self.existing_references[k]['content'])
+                                                                  refer_content=self.existing_refs[k]['content'])
                                                               )
                 print(k + ' Converted.')
 
-        if self.existing_references:
+        if self.existing_refs:
             if not self.md_content.endswith('\n'):
                 self.md_content += '\n'
         else:
@@ -159,17 +159,17 @@ class MdPic:
             else:
                 self.md_content += '\n\n'
 
-        for refer_id in new_references:
-            if new_references[refer_id]['title']:
+        for refer_id in new_refs:
+            if new_refs[refer_id]['title']:
                 self.md_content += '[{refer_id}]: {refer_content} {refer_title}\n'.format(
                     refer_id=refer_id,
-                    refer_content=new_references[refer_id]['content'],
-                    refer_title=new_references[refer_id]['title']
+                    refer_content=new_refs[refer_id]['content'],
+                    refer_title=new_refs[refer_id]['title']
                 )
             else:
                 self.md_content += '[{refer_id}]: {refer_content}\n'.format(
                     refer_id=refer_id,
-                    refer_content=new_references[refer_id]['content']
+                    refer_content=new_refs[refer_id]['content']
                 )
             print(refer_id + ' Converted.')
 
@@ -225,22 +225,22 @@ class MdPic:
                 refer_id = match.group('refer_id')
             else:
                 refer_id = alt_text
-            if self.existing_references[refer_id]['content'].startswith(('data:image', 'http')):
-                if self.existing_references[refer_id]['content'].startswith('data:image'):
+            if self.existing_refs[refer_id]['content'].startswith(('data:image', 'http')):
+                if self.existing_refs[refer_id]['content'].startswith('data:image'):
                     base64_pic = re.findall(MdPic.base64_img_re,
-                                            self.existing_references[refer_id]['content'])[0].strip()
+                                            self.existing_refs[refer_id]['content'])[0].strip()
                     pic_content = base64_pic.decode('base64')
                 else:
-                    pic_content = requests.get(self.existing_references[refer_id]['content']).content
+                    pic_content = requests.get(self.existing_refs[refer_id]['content']).content
                 pic_md5 = md5(pic_content).hexdigest()
 
-                if self.existing_references[refer_id]['title']:
+                if self.existing_refs[refer_id]['title']:
                     self.md_content = self.md_content.replace(match.group(),
                                                               '![{alt_text}](./{pic_folder_name}/{pic_md5}.png {title})'.format(
                                                                   alt_text=alt_text,
                                                                   pic_folder_name=self.pic_folder_name,
                                                                   pic_md5=pic_md5,
-                                                                  title=self.existing_references[refer_id]['title'])
+                                                                  title=self.existing_refs[refer_id]['title'])
                                                               )
                 else:
                     self.md_content = self.md_content.replace(match.group(),
@@ -255,12 +255,12 @@ class MdPic:
                         f.write(pic_content)
                     print(pic_path + ' Converted.')
 
-                self.existing_references[refer_id]['used'] = True
+                self.existing_refs[refer_id]['used'] = True
 
         # 移除已经使用的reference
-        for k in self.existing_references:
-            if self.existing_references[k]['used']:
-                self.md_content = self.md_content.replace(self.existing_references[k]['raw'], '')
+        for k in self.existing_refs:
+            if self.existing_refs[k]['used']:
+                self.md_content = self.md_content.replace(self.existing_refs[k]['raw'], '')
 
         dst_file = open(self.file_path, 'w')
         dst_file.write(self.md_content)
