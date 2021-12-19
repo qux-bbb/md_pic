@@ -12,6 +12,7 @@ markdown图片转换相关
 """
 import argparse
 import base64
+import sys
 import os
 import re
 import shutil
@@ -19,7 +20,6 @@ import textwrap
 import requests
 
 from hashlib import md5
-
 
 
 class MdPic:
@@ -39,7 +39,7 @@ class MdPic:
         self.inline_matches = None  # 行内式图片集
         self.refer_matches = None  # 引用式图片集
 
-        src_file = open(file_path, 'r')
+        src_file = open(file_path, 'r', encoding=sys.getdefaultencoding())
         self.md_content = src_file.read()
         src_file.close()
 
@@ -84,7 +84,7 @@ class MdPic:
         # 图片类型经过试验没必要区分，所以直接硬编码
         # 可行的类型有: jpeg/png/gif
         # 精准识别需要引入magic库，不方便
-        base64_pic = 'data:image/png;base64,' + pic_encoded
+        base64_pic = 'data:image/png;base64,' + pic_encoded.decode()
         return base64_pic, pic_content
 
     def pic_in(self):
@@ -93,7 +93,9 @@ class MdPic:
         :return: None
         """
 
-        ref_ids = self.existing_refs.keys()
+        ref_ids = []
+        for k in self.existing_refs.keys():
+            ref_ids.append(k)
 
         new_refs = {}
 
@@ -105,7 +107,7 @@ class MdPic:
                 base64_pic = match_content
                 pic_encoded = re.search(
                     MdPic.base64_img_re, match_content).group(1).strip()
-                pic_content = pic_encoded.decode('base64')
+                pic_content = base64.b64encode(pic_encoded.encode())
             else:
                 base64_pic, pic_content = self.get_pic_base64_and_content(
                     match_content)
@@ -203,7 +205,7 @@ class MdPic:
                 if match_content.startswith('data:image'):
                     base64_pic = re.findall(
                         MdPic.base64_img_re, match_content)[0].strip()
-                    pic_content = base64_pic.decode('base64')
+                    pic_content = base64.b64decode(base64_pic)
                 else:
                     pic_content = requests.get(match_content).content
                 pic_md5 = md5(pic_content).hexdigest()
@@ -235,7 +237,7 @@ class MdPic:
                 if self.existing_refs[refer_id]['content'].startswith('data:image'):
                     base64_pic = re.findall(MdPic.base64_img_re,
                                             self.existing_refs[refer_id]['content'])[0].strip()
-                    pic_content = base64_pic.decode('base64')
+                    pic_content = base64.b64decode(base64_pic)
                 else:
                     pic_content = requests.get(
                         self.existing_refs[refer_id]['content']).content

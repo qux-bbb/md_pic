@@ -1,9 +1,7 @@
-# md_pic  
+# md_pic
 markdown图片转换相关  
 
 ## 简单介绍
-
-python环境为2.7  
 对markdown的图片一直很纠结，放在图床是很简单，但是有可能图床失效，然后就有了这个脚本，用来将图片转成自己想要的形式  
 
 markdown图片分为2种形式: 行内式, 参考式  
@@ -22,8 +20,10 @@ markdown图片分为2种形式: 行内式, 参考式
 1. 将图片直接用base64的形式编码在文件中(参考式)，结果为单个文件, 缺点是单个文件体积过大
 2. 将图片保存到pics文件夹中，md文件引用本地文件夹中的图片，内容简练，缺点是有另外的图片文件
 
+如果要保存网络图片，需要安装requests: `pip install requests`  
+
 ## 使用命令  
-```bat
+```r
 usage: md_pic.py [-h] {pic_in,pic_out} path
 
 Convert markdown pictures.
@@ -39,6 +39,16 @@ optional arguments:
   -h, --help        show this help message and exit
 ```
 
+## 使用示例
+test目录下有测试用的例子  
+```r
+# 把图片放到readme.md中
+py -3 md_pic_py3.py pic_in test/readme.md
+
+# 把所有图片都存成文件的形式
+py -3 md_pic_py3.py pic_out test/readme.md
+```
+
 ## 参考链接
 markdown官网: https://daringfireball.net/projects/markdown/  
 
@@ -46,4 +56,8 @@ markdown官网: https://daringfireball.net/projects/markdown/
 虽然功能很简单, 但格式稍微多几样, 如果没有搞清楚就随便写脚本, 就可能会漏掉一些情况  
 所以一定要尽可能把各种情况考虑到, 先把大概的逻辑整理清楚, 按照整理好的逻辑实现, 才不会越写越乱  
 
-20191218
+python2和python3兼容太麻烦了，所以分成了2个脚本  
+
+
+---
+20191218  
